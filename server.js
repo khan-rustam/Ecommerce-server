@@ -8,7 +8,16 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(bodyParser());
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
+app.use(cors({
+    origin: [
+        'http://localhost:5173',
+        'https://ecommerce-client-1gsy.vercel.app'
+    ],
+    credentials: true
+}));
+
+// Handle CORS preflight requests for all routes
+app.options('*', cors());
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI)
