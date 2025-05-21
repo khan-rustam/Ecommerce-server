@@ -16,6 +16,7 @@ const {
     deletePaymentMethod,
     getAllUsers,
     updateUserRole,
+    uploadAvatar,
 } = require("../controllers/authController");
 const jwt = require("jsonwebtoken");
 const auth = require("../middleware/auth");
@@ -56,5 +57,7 @@ router.delete("/payments/:id", auth, deletePaymentMethod);
 router.get("/admin/users", authMiddleware, getAllUsers);
 // Admin: Update user role
 router.put("/admin/users/:id/role", authMiddleware, updateUserRole);
+
+router.post("/upload-avatar", authMiddleware, uploadAvatar);
 
 module.exports = router;

@@ -27,6 +27,12 @@ mongoose.connect(process.env.MONGO_URI)
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin/brand-settings', require('./routes/brandSettings'));
+app.use('/api/banners', require('./routes/bannerRoutes'));
+app.use('/api/blogs', require('./routes/blogRoutes'));
+app.use('/api/brands', require('./routes/brandRoutes'));
+app.use('/api/categories', require('./routes/categoryRoutes'));
+app.use('/api/products', require('./routes/productRoutes'));
+app.use('/api/smart-banners', require('./routes/smartBannerRoutes'));
 
 app.get('/', (req, res) => {
     res.send('API Running');

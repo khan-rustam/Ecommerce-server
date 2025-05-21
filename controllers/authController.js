@@ -4,6 +4,8 @@ const User = require("../models/User");
 const nodemailer = require("nodemailer");
 const Address = require("../models/Address");
 const PaymentMethod = require("../models/PaymentMethod");
+const { userAvatarStorage } = require('../middleware/cloudinary');
+const multer = require('multer');
 
 // In-memory store for OTPs (for demo; use DB in production)
 const otpStore = {};
@@ -364,5 +366,34 @@ exports.updateUserRole = async(req, res) => {
         res
             .status(500)
             .json({ msg: "Failed to update user role", error: err.message });
+    }
+};
+
+// Upload user avatar
+exports.uploadAvatar = async(req, res) => {
+    try {
+        const userId = req.user.id;
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ msg: 'User not found' });
+        // Use multer with user-specific storage
+        const upload = multer({ storage: userAvatarStorage(user.username) }).single('avatar');
+        upload(req, res, async function(err) {
+            if (err) return res.status(400).json({ msg: 'Upload error', error: err.message });
+            if (!req.file) return res.status(400).json({ msg: 'No file uploaded' });
+            // Delete old avatar from Cloudinary if exists
+            if (user.avatarPublicId) {
+                try {
+                    await require('../middleware/cloudinary').cloudinary.uploader.destroy(user.avatarPublicId);
+                } catch (e) {
+                    // Optionally log error, but don't block user
+                }
+            }
+            user.avatar = req.file.path;
+            user.avatarPublicId = req.file.filename; // CloudinaryStorage sets this
+            await user.save();
+            res.json({ msg: 'Avatar uploaded', avatar: user.avatar });
+        });
+    } catch (err) {
+        res.status(500).json({ msg: 'Failed to upload avatar', error: err.message });
     }
 };

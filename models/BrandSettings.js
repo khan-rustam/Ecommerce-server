@@ -1,10 +1,35 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const BrandSettingsSchema = new mongoose.Schema({
-    paletteName: { type: String, required: true },
+    paletteName: { type: String },
     primary: { type: String },
     secondary: { type: String },
     accent: { type: String },
+    background: { type: String },
+    text: { type: String },
+    logoUrl: { type: String },
+    logoPublicId: { type: String, default: "" },
+    logoWidth: { type: Number, default: 48 },
+    logoHeight: { type: Number, default: 48 },
+    heroBannerUrl: { type: String },
+    heroBannerPublicId: { type: String, default: "" },
+    heroImageUrl: { type: String },
+    heroTitle: { type: String, default: "" },
+    heroSubtitle: { type: String, default: "" },
+    heroTitleFontSize: { type: Number, default: 48 },
+    heroTitleFontWeight: { type: String, default: "bold" },
+    heroSubtitleFontSize: { type: Number, default: 20 },
+    heroSubtitleFontWeight: { type: String, default: "normal" },
+    name: { type: String },
+    address: { type: String },
+    email: { type: String },
+    phone: { type: String },
+    facebook: { type: String },
+    twitter: { type: String },
+    instagram: { type: String },
+    linkedin: { type: String },
+    mapIframe: { type: String },
+    footerDescription: { type: String },
 }, { timestamps: true });
 
-module.exports = mongoose.model('BrandSettings', BrandSettingsSchema);
+module.exports = mongoose.model("BrandSettings", BrandSettingsSchema);
