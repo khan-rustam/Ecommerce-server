@@ -33,6 +33,18 @@ app.use('/api/brands', require('./routes/brandRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/smart-banners', require('./routes/smartBannerRoutes'));
+app.use('/api/cart', require('./routes/cart'));
+app.use('/api/wishlist', require('./routes/wishlist'));
+app.use('/api/reviews', require('./routes/reviewRoutes'));
+app.use('/api/questions', require('./routes/questionRoutes'));
+
+// Enquiry Routes
+app.use('/api', require('./routes/enquiryRoutes'));
+
+// Callback Routes
+app.use('/api', require('./routes/callbackRoutes'));
+
+app.use('/api/warehouses', require('./routes/warehouseRoutes'));
 
 app.get('/', (req, res) => {
     res.send('API Running');

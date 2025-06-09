@@ -12,7 +12,14 @@ cloudinary.config({
 // Get all categories
 exports.getAllCategories = async(req, res) => {
     try {
-        const categories = await Category.find()
+        // Check if the request is from an admin user
+        // Either from auth middleware or from query parameter
+        const isAdmin = (req.user && req.user.isAdmin) || req.query.admin === 'true';
+
+        // If admin, show all categories; otherwise filter out hidden ones
+        const filter = isAdmin ? {} : { isHidden: false };
+
+        const categories = await Category.find(filter)
             .populate('parent', 'name')
             .sort({ name: 1 });
         res.status(200).json(categories);
@@ -43,6 +50,12 @@ exports.getCategoryById = async(req, res) => {
             return res.status(404).json({ message: 'Category not found' });
         }
 
+        // Check if category is hidden and user is not admin
+        const isAdmin = req.user && req.user.isAdmin;
+        if (category.isHidden && !isAdmin) {
+            return res.status(404).json({ message: 'Category not found' });
+        }
+
         res.status(200).json(category);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching category', error: error.message });
@@ -56,6 +69,12 @@ exports.getCategoryBySlug = async(req, res) => {
             .populate('parent', 'name');
 
         if (!category) {
+            return res.status(404).json({ message: 'Category not found' });
+        }
+
+        // Check if category is hidden and user is not admin
+        const isAdmin = req.user && req.user.isAdmin;
+        if (category.isHidden && !isAdmin) {
             return res.status(404).json({ message: 'Category not found' });
         }
 
@@ -200,8 +219,27 @@ exports.toggleVisibility = async(req, res) => {
             return res.status(404).json({ message: 'Category not found' });
         }
 
-        category.isHidden = !category.isHidden;
+        // Toggle visibility
+        const newVisibility = !category.isHidden;
+        category.isHidden = newVisibility;
         await category.save();
+
+        // Check if we should cascade the visibility change to subcategories
+        // This happens when the frontend sends { cascade: true } in the request body
+        if (newVisibility && req.body.cascade) {
+            // Find all subcategories
+            const subcategories = await Category.find({ parent: category._id });
+
+            // Update all subcategories to match parent visibility
+            if (subcategories.length > 0) {
+                const updatePromises = subcategories.map(async(subcat) => {
+                    subcat.isHidden = true;
+                    return subcat.save();
+                });
+
+                await Promise.all(updatePromises);
+            }
+        }
 
         res.status(200).json(category);
     } catch (error) {

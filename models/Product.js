@@ -234,7 +234,20 @@ const ProductSchema = new mongoose.Schema({
     metaDescription: { type: String },
     metaKeywords: [{ type: String }],
     createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now }
+    updatedAt: { type: Date, default: Date.now },
+    warehouses: [{
+        warehouseId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Warehouse',
+            required: true
+        },
+        stock: {
+            type: Number,
+            required: true,
+            min: 0,
+            default: 0
+        }
+    }],
 }, { timestamps: true });
 
 // Create slug from name before saving

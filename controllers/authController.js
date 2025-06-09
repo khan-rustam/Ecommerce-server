@@ -397,3 +397,19 @@ exports.uploadAvatar = async(req, res) => {
         res.status(500).json({ msg: 'Failed to upload avatar', error: err.message });
     }
 };
+
+// Delete user (admin only)
+exports.deleteUser = async(req, res) => {
+    const requestingUser = await User.findById(req.user.id);
+    if (!requestingUser || !requestingUser.isAdmin) {
+        return res.status(403).json({ msg: "Forbidden: Admins only" });
+    }
+    const { id } = req.params;
+    try {
+        const user = await User.findByIdAndDelete(id);
+        if (!user) return res.status(404).json({ msg: "User not found" });
+        res.json({ msg: "User deleted" });
+    } catch (err) {
+        res.status(500).json({ msg: "Failed to delete user", error: err.message });
+    }
+};

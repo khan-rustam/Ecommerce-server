@@ -4,6 +4,8 @@ const Brand = require('../models/Brand');
 const cloudinary = require('cloudinary').v2;
 const { Readable } = require('stream');
 const { StatusCodes } = require('http-status-codes');
+const Warehouse = require('../models/Warehouse');
+const { getDistanceFromLatLonInKm } = require('../utils/location');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -38,27 +40,48 @@ const deleteImage = async(publicId) => {
     });
 };
 
-// Get all products with pagination and filtering
+// Get all products with filtering, sorting, and pagination
 const getAllProducts = async(req, res) => {
     try {
+        const isAdmin = req.user && req.user.isAdmin;
+
+        // Build query
+        let query = {};
+
+        // Filter by category
+        if (req.query.category) {
+            query.category = req.query.category;
+        }
+
+        // Filter by brand
+        if (req.query.brand) {
+            query.brand = req.query.brand;
+        }
+
+        // Filter by search term
+        if (req.query.search) {
+            query.$or = [
+                { name: { $regex: req.query.search, $options: 'i' } },
+                { description: { $regex: req.query.search, $options: 'i' } }
+            ];
+        }
+
+        // For non-admin users, only show products with visible categories
+        if (!isAdmin) {
+            // Get all visible categories
+            const visibleCategories = await Category.find({ isHidden: false }).select('_id');
+            const visibleCategoryIds = visibleCategories.map(cat => cat._id);
+
+            // Add category filter to query
+            query.category = { $in: visibleCategoryIds };
+
+            // Also filter out hidden products
+            query.isHidden = { $ne: true };
+        }
+
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
-
-        const query = {};
-
-        // Filter by category if provided
-        if (req.query.category) {
-            const category = await Category.findOne({ slug: req.query.category });
-            if (category) {
-                query.category = category._id;
-            }
-        }
-
-        // Filter by search term if provided
-        if (req.query.search) {
-            query.name = { $regex: req.query.search, $options: 'i' };
-        }
 
         // Filter by price range if provided
         if (req.query.minPrice || req.query.maxPrice) {
@@ -71,9 +94,6 @@ const getAllProducts = async(req, res) => {
         if (req.query.featured === 'true') query.isFeatured = true;
         if (req.query.new === 'true') query.isNew = true;
         if (req.query.trending === 'true') query.isTrending = true;
-
-        // Don't show hidden products
-        query.isHidden = { $ne: true };
 
         // Sorting
         let sort = {};
@@ -311,21 +331,44 @@ const deleteProduct = async(req, res) => {
         }
 
         // Delete product images from cloudinary
-        if (product.imagePublicIds && product.imagePublicIds.length > 0) {
-            for (const publicId of product.imagePublicIds) {
-                try {
-                    await cloudinary.uploader.destroy(publicId);
-                    console.log(`Image ${publicId} deleted successfully`);
-                } catch (cloudinaryError) {
-                    console.error('Error deleting image from Cloudinary:', cloudinaryError);
+        const imagesToDelete = [];
+
+        // Check for images array with public_id property
+        if (product.images && product.images.length > 0) {
+            product.images.forEach(image => {
+                if (image.public_id) {
+                    imagesToDelete.push(image.public_id);
                 }
+            });
+        }
+
+        // Check for imagePublicIds array (older format)
+        if (product.imagePublicIds && product.imagePublicIds.length > 0) {
+            product.imagePublicIds.forEach(publicId => {
+                if (publicId && !imagesToDelete.includes(publicId)) {
+                    imagesToDelete.push(publicId);
+                }
+            });
+        }
+
+        // Delete all collected image IDs from Cloudinary
+        for (const publicId of imagesToDelete) {
+            try {
+                await deleteImage(publicId);
+                console.log(`Image ${publicId} deleted successfully from Cloudinary`);
+            } catch (cloudinaryError) {
+                console.error(`Error deleting image ${publicId} from Cloudinary:`, cloudinaryError);
+                // Continue with deletion even if some images fail
             }
         }
 
-        // Delete product
+        // Delete product from database
         await Product.findByIdAndDelete(id);
 
-        res.status(200).json({ message: 'Product deleted successfully' });
+        res.status(200).json({
+            message: 'Product deleted successfully',
+            deletedImagesCount: imagesToDelete.length
+        });
     } catch (error) {
         console.error('Error deleting product:', error);
         res.status(500).json({ message: 'Error deleting product', error: error.message });
@@ -467,19 +510,39 @@ const bulkProductsOperation = async(req, res) => {
             case 'delete':
                 // Find products to delete their images
                 const productsToDelete = await Product.find({ _id: { $in: productIds } });
+                let totalImagesDeleted = 0;
 
                 // Delete images from Cloudinary
                 for (const product of productsToDelete) {
+                    const imagesToDelete = [];
+
+                    // Check for images array with public_id property
                     if (product.images && product.images.length > 0) {
-                        for (const image of product.images) {
+                        product.images.forEach(image => {
                             if (image.public_id) {
-                                try {
-                                    await deleteImage(image.public_id);
-                                } catch (err) {
-                                    console.error(`Failed to delete image ${image.public_id}:`, err);
-                                    // Continue with the process even if some images fail to delete
-                                }
+                                imagesToDelete.push(image.public_id);
                             }
+                        });
+                    }
+
+                    // Check for imagePublicIds array (older format)
+                    if (product.imagePublicIds && product.imagePublicIds.length > 0) {
+                        product.imagePublicIds.forEach(publicId => {
+                            if (publicId && !imagesToDelete.includes(publicId)) {
+                                imagesToDelete.push(publicId);
+                            }
+                        });
+                    }
+
+                    // Delete all collected image IDs from Cloudinary
+                    for (const publicId of imagesToDelete) {
+                        try {
+                            await deleteImage(publicId);
+                            totalImagesDeleted++;
+                            console.log(`Image ${publicId} deleted successfully from Cloudinary`);
+                        } catch (err) {
+                            console.error(`Failed to delete image ${publicId}:`, err);
+                            // Continue with the process even if some images fail to delete
                         }
                     }
                 }
@@ -488,7 +551,8 @@ const bulkProductsOperation = async(req, res) => {
                 result = await Product.deleteMany({ _id: { $in: productIds } });
 
                 res.status(200).json({
-                    message: `${result.deletedCount} products deleted successfully`
+                    message: `${result.deletedCount} products deleted successfully`,
+                    imagesDeleted: totalImagesDeleted
                 });
                 break;
 
@@ -521,13 +585,79 @@ const bulkProductsOperation = async(req, res) => {
     }
 };
 
+// Get product by ID
+const getProductById = async(req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Check if ID is a valid MongoDB ObjectId
+        if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ message: 'Invalid product ID format' });
+        }
+
+        const product = await Product.findById(id)
+            .populate('category', 'name slug')
+            .populate('brand', 'name slug');
+
+        if (!product) {
+            return res.status(404).json({ message: 'Product not found' });
+        }
+
+        res.status(200).json({ product });
+    } catch (error) {
+        console.error('Error getting product by ID:', error);
+        res.status(500).json({ message: 'Error fetching product', error: error.message });
+    }
+};
+
+// Get products from the nearest warehouse within range
+const getProductsByNearestWarehouse = async(req, res) => {
+    try {
+        const { lat, lng } = req.query;
+        if (!lat || !lng) {
+            return res.status(400).json({ message: 'Latitude and longitude are required' });
+        }
+        const warehouses = await Warehouse.find();
+        let nearest = null;
+        let minDistance = Infinity;
+        for (const wh of warehouses) {
+            const dist = getDistanceFromLatLonInKm(
+                parseFloat(lat),
+                parseFloat(lng),
+                wh.coordinates.lat,
+                wh.coordinates.lng
+            );
+            if (dist <= wh.rangeInKm && dist < minDistance) {
+                minDistance = dist;
+                nearest = wh;
+            }
+        }
+        if (!nearest) {
+            return res.status(404).json({ message: 'No warehouse found within range' });
+        }
+        // Find products available in this warehouse
+        const products = await Product.find({ 'warehouses.warehouseId': nearest._id })
+            .populate('category', 'name slug')
+            .populate('brand', 'name slug');
+        // Filter to only include stock > 0 in this warehouse
+        const filtered = products.filter(p => {
+            const whStock = p.warehouses.find(w => w.warehouseId.toString() === nearest._id.toString());
+            return whStock && whStock.stock > 0;
+        });
+        res.json({ warehouse: nearest, products: filtered });
+    } catch (err) {
+        res.status(500).json({ message: 'Error finding nearest warehouse', error: err.message });
+    }
+};
+
 // Export all functions
 module.exports = {
-    createProduct,
     getAllProducts,
     getProductsByCategory,
     getProductBySlug,
+    getProductById,
     getAllProductsAdmin,
+    createProduct,
     updateProduct,
     deleteProduct,
     toggleProductVisibility,
@@ -535,8 +665,7 @@ module.exports = {
     toggleTrending,
     uploadProductImage,
     bulkProductsOperation,
-
-    // Aliases for API routes
-    getProducts: getAllProducts,
-    getProductById: getProductBySlug
+    getProductsByNearestWarehouse,
+    // Aliases for backward compatibility
+    getProducts: getAllProducts
 };
