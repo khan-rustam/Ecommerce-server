@@ -9,10 +9,7 @@ const PORT = process.env.PORT || 9000;
 // Middleware
 app.use(bodyParser());
 app.use(cors({
-    origin: [
-        'http://localhost:5173',
-        'https://ecommerce-client-1gsy.vercel.app'
-    ],
+    origin: '*',
     credentials: true
 }));
 
